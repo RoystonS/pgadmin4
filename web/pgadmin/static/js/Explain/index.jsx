@@ -350,6 +350,41 @@ function parsePlan(data, ctx) {
     }
   }
 
+  const citusDistributedQuery = data['Distributed Query'];
+  if (citusDistributedQuery) {
+    // Convert the Citus Distributed Query node structure into a set of sub 'Plans',
+    // which will then process with the regular Plan layout code.
+
+    const citusJob = citusDistributedQuery['Job'];
+    // Convert the Citus Job data into a regular query plan 'node' with a 'Node Type',
+    // ready for processing by ImageMapper.
+    const jobPlan = {
+      'Node Type': 'Citus Job',
+      ...citusJob
+    };
+    const citusTasks = citusJob['Tasks'];
+    if (citusTasks) {
+      jobPlan['Plans'] = citusTasks.map(citusJobTask => {
+        const taskPlan = {
+          'Node Type': 'Citus Task',
+          ...citusJobTask
+        };
+        const remotePlan = citusJobTask['Remote Plan'];
+        delete taskPlan['Remote Plan'];
+        // A Remote Plan is an array of arrays of plans.
+        taskPlan['Plans'] = remotePlan.flatMap(arr => arr.map(planLevel1Entry => {
+          return planLevel1Entry['Plan'];
+        }));
+        return taskPlan;
+      });
+
+      delete jobPlan['Tasks'];
+    }
+
+    data['Plans'] = [jobPlan];
+    delete data['Distributed Query'];
+  }
+
   // Start calculating xpos, ypos, width and height for child plans if any
   if ('Plans' in data) {
     data['width'] += offsetX;
